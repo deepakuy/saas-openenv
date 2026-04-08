@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -33,16 +34,20 @@ class StepRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @app.post("/reset")
-def reset(request: ResetRequest):
+def reset(request: Optional[ResetRequest] = None):
     """Reset the environment for the given task and return the initial observation."""
     valid_tasks = {"easy", "medium", "hard"}
-    if request.task not in valid_tasks:
+
+    task = request.task if request else "easy"
+
+    if task not in valid_tasks:
         raise HTTPException(
             status_code=422,
-            detail=f"Invalid task '{request.task}'. Must be one of: {sorted(valid_tasks)}",
+            detail=f"Invalid task '{task}'. Must be one of: {sorted(valid_tasks)}",
         )
 
-    observation = env.reset(task=request.task)
+    observation = env.reset(task=task)
+
     return {
         "observation": observation.model_dump(),
         "info": {}
