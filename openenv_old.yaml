@@ -1,0 +1,250 @@
+# openenv.yaml - SaaS Unit Economics Optimization Environment
+# Conforms to the OpenEnv manifest specification.
+# Required fields: name, version, description
+
+name: saas-unit-economics-env
+version: "1.0.0"
+description: >
+  A reinforcement learning environment where an AI agent acts as the growth
+  manager of an early-stage SaaS startup. The agent must balance user
+  acquisition, churn control, pricing strategy, and product investment to
+  maximise Monthly Recurring Revenue (MRR) while surviving within a limited
+  cash runway. Designed for real-world applicability, deterministic dynamics,
+  and clear reward signal.
+
+# ---------------------------------------------------------------------------
+# API endpoints (HTTP interface)
+# ---------------------------------------------------------------------------
+endpoints:
+  reset:
+    method: POST
+    path: /reset
+    description: Reset the environment to the initial state for a given task.
+    input:
+      task:
+        type: string
+        enum: [easy, medium, hard]
+        default: easy
+    output:
+      observation:
+        type: object
+
+  step:
+    method: POST
+    path: /step
+    description: Apply a discrete action and advance the environment by one timestep.
+    input:
+      action:
+        type: string
+        enum:
+          - run_ads
+          - improve_product
+          - run_retention_campaign
+          - adjust_pricing
+          - do_nothing
+    output:
+      observation:
+        type: object
+      reward:
+        type: float
+      done:
+        type: boolean
+      info:
+        type: object
+
+  state:
+    method: GET
+    path: /state
+    description: Return the current observation without advancing the environment.
+    output:
+      observation:
+        type: object
+
+# ---------------------------------------------------------------------------
+# Observation space
+# ---------------------------------------------------------------------------
+observation:
+  users:
+    type: integer
+    description: Number of active paying customers.
+  mrr:
+    type: float
+    description: Monthly Recurring Revenue in USD.
+  budget:
+    type: float
+    description: Remaining operational cash in USD.
+  churn_rate:
+    type: float
+    range: [0.02, 0.50]
+    description: Fraction of users lost per timestep. Floor is 0.02.
+  cac:
+    type: float
+    range: [50.0, 500.0]
+    description: Customer Acquisition Cost in USD. Floor 50, ceiling 500.
+  product_quality:
+    type: float
+    range: [0.0, 1.0]
+    description: Abstract product quality score. Higher values reduce churn.
+  timestep:
+    type: integer
+    range: [0, 24]
+    description: Current month index within the episode.
+
+# ---------------------------------------------------------------------------
+# Action space
+# ---------------------------------------------------------------------------
+action_space:
+  type: discrete
+  actions:
+    - name: run_ads
+      description: >
+        Spend $5K on paid acquisition. Acquires floor(5000 / CAC) new users.
+        CAC increases by 15% (diminishing returns).
+    - name: improve_product
+      description: >
+        Invest $3K in product development. Raises product_quality by 0.1
+        (capped at 1.0) and reduces churn_rate by a fixed 0.01.
+    - name: run_retention_campaign
+      description: >
+        Spend $2K on a targeted retention campaign. Immediately reduces
+        churn_rate by 0.03 (one-time, non-cumulative).
+    - name: adjust_pricing
+      description: >
+        Increase price_per_user by 10%, raising MRR immediately. Triggers a
+        temporary +0.02 churn spike. Subject to a 4-step cooldown.
+    - name: do_nothing
+      description: >
+        No spend. CAC decreases by 5% (market cooldown). Churn continues
+        naturally. Preserves runway but risks user decay.
+
+# ---------------------------------------------------------------------------
+# Reward function
+# ---------------------------------------------------------------------------
+reward:
+  description: >
+    Dense reward issued every timestep. Rewards efficient growth; penalises
+    churn, excessive CAC, low runway, and bankruptcy.
+  components:
+    mrr_reward:
+      formula: "mrr / 20.0"
+      description: Scales positively with revenue.
+    acquisition_bonus:
+      formula: "new_users * 0.1"
+      description: Small bonus for each user acquired this step.
+    churn_penalty:
+      formula: "-(users_lost * 0.2)"
+      description: Penalises every churned user. Weighted higher than acquisition.
+    cac_penalty:
+      formula: "-max(0, (cac - 150) / 100)"
+      description: Penalises CAC above $150. Zero penalty below threshold.
+    runway_penalty:
+      formula: "-2.0 if budget < 10000 else 0"
+      description: Early warning penalty when cash reserves are critically low.
+    bankruptcy_penalty:
+      formula: "-50.0 if budget <= 0 else 0"
+      description: Terminal penalty applied once on episode failure.
+  clipping: [-10.0, 10.0]
+
+# ---------------------------------------------------------------------------
+# Tasks
+# ---------------------------------------------------------------------------
+tasks:
+  easy:
+    description: >
+      Stable conditions. Low churn, ample runway, reasonable CAC. The agent
+      must learn basic budget pacing and the value of alternating between
+      acquisition and product investment.
+    initial_state:
+      users: 50
+      budget: 30000
+      churn_rate: 0.05
+      cac: 100.0
+      product_quality: 0.5
+      price_per_user: 50.0
+    win_condition: Survive all 24 timesteps with budget > 0 and users > 20.
+    grader:
+      description: >
+        Scores the agent on full survival, user retention, and revenue growth
+        under stable conditions. Full marks require comfortably exceeding the
+        minimum user threshold with healthy MRR at episode end.
+      range: [0.0, 1.0]
+      scoring:
+        "1.0": Survived all 24 steps, budget > 0, users >= 80, mrr >= 4000.
+        "0.7": Survived all 24 steps, budget > 0, users >= 40, mrr >= 2000.
+        "0.4": Survived all 24 steps, budget > 0, users > 20 (bare minimum met).
+        "0.0": Budget <= 0 or users <= 0 before timestep 24 (episode failure).
+
+  medium:
+    description: >
+      Retention crisis. High starting churn and weak product quality force the
+      agent to invest in product and retention before scaling acquisition.
+      Tests whether the agent can sequence decisions correctly.
+    initial_state:
+      users: 80
+      budget: 25000
+      churn_rate: 0.12
+      cac: 120.0
+      product_quality: 0.3
+      price_per_user: 50.0
+    win_condition: Survive 24 timesteps with users > 40 at episode end.
+    grader:
+      description: >
+        Scores the agent on its ability to stabilise a high-churn situation and
+        retain a meaningful user base. Full marks require not only surviving but
+        demonstrating that churn was brought under control through smart
+        sequencing of product and retention investment.
+      range: [0.0, 1.0]
+      scoring:
+        "1.0": Survived all 24 steps, budget > 0, users >= 70, mrr >= 3500.
+        "0.7": Survived all 24 steps, budget > 0, users >= 40, mrr >= 2000.
+        "0.4": Survived all 24 steps, budget > 0, users > 20 (partial recovery).
+        "0.0": Budget <= 0 or users <= 0 before timestep 24 (episode failure).
+
+  hard:
+    description: >
+      Tight runway with a growth requirement. The agent must grow MRR to $8K
+      while surviving on a lean cash reserve. Requires strategic timing of all
+      five actions and cannot rely on a single dominant policy.
+    initial_state:
+      users: 60
+      budget: 15000
+      churn_rate: 0.10
+      cac: 140.0
+      product_quality: 0.4
+      price_per_user: 50.0
+    win_condition: Survive 24 timesteps AND end with mrr > 8000.
+    grader:
+      description: >
+        Scores the agent on both survival and revenue growth under tight runway
+        pressure. Full marks require hitting the MRR target with budget
+        remaining, demonstrating optimal capital allocation across all five
+        actions. Partial credit is awarded for survival alone.
+      range: [0.0, 1.0]
+      scoring:
+        "1.0": Survived all 24 steps, budget > 0, mrr >= 8000, users >= 100.
+        "0.7": Survived all 24 steps, budget > 0, mrr >= 8000 (growth target met).
+        "0.4": Survived all 24 steps, budget > 0, mrr < 8000 (survived, no growth).
+        "0.0": Budget <= 0 or users <= 0 before timestep 24 (episode failure).
+
+# ---------------------------------------------------------------------------
+# Episode configuration
+# ---------------------------------------------------------------------------
+episode:
+  max_timesteps: 24
+  termination_conditions:
+    - budget <= 0     # bankruptcy
+    - users <= 0      # no customers remaining
+    - timestep >= 24  # full horizon reached
+
+# ---------------------------------------------------------------------------
+# Environment metadata
+# ---------------------------------------------------------------------------
+metadata:
+  domain: SaaS / Business Simulation
+  interface: HTTP REST (OpenEnv-compatible)
+  deterministic: true
+  stochastic: false
+  real_world_relevance: >
+    Models the core unit economics decisions every early-stage SaaS founder
+    faces: CAC vs LTV trade-offs, churn management, pricing elasticity, and
+    product investment sequencing under runway pressure.

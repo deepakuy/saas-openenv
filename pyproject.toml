@@ -1,0 +1,18 @@
+[project]
+name = "saas-openenv"
+version = "1.0.0"
+description = "SaaS Unit Economics Optimization RL Environment"
+authors = [
+    { name = "Deepak U Yaliwal" }
+]
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "requests",
+    "openai",
+    "openenv-core>=0.2.0"
+]
+
+[project.scripts]
+server = "server.app:main"
