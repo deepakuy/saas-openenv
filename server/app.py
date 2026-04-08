@@ -43,7 +43,10 @@ def reset(request: ResetRequest):
         )
 
     observation = env.reset(task=request.task)
-    return {"observation": observation.model_dump()}
+    return {
+        "observation": observation.model_dump(),
+        "info": {}
+    }
 
 
 @app.post("/step")
