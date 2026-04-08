@@ -1,14 +1,13 @@
 import os
-import requests
 from openai import OpenAI
 
 # ---------------------------------------------------------------------------
 # Environment variables
 # ---------------------------------------------------------------------------
 
-API_BASE_URL = os.environ["API_BASE_URL"]
-MODEL_NAME   = os.environ["MODEL_NAME"]
-HF_TOKEN     = os.environ["HF_TOKEN"]
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:7860")
+MODEL_NAME   = os.getenv("MODEL_NAME", "dummy-model")
+HF_TOKEN     = os.getenv("HF_TOKEN", "dummy-token")
 
 ENV_NAME     = "saas-unit-economics-env"
 
@@ -17,20 +16,6 @@ ENV_NAME     = "saas-unit-economics-env"
 # ---------------------------------------------------------------------------
 
 client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
-
-# ---------------------------------------------------------------------------
-# API helpers
-# ---------------------------------------------------------------------------
-
-def reset_env(task: str) -> dict:
-    response = requests.post(f"{API_BASE_URL}/reset", json={"task": task})
-    response.raise_for_status()
-    return response.json()["observation"]
-
-def step_env(action: str) -> dict:
-    response = requests.post(f"{API_BASE_URL}/step", json={"action": action})
-    response.raise_for_status()
-    return response.json()
 
 # ---------------------------------------------------------------------------
 # Heuristic policy
@@ -64,51 +49,56 @@ def ping_model(client):
 # Main loop
 # ---------------------------------------------------------------------------
 
+from environment import SaaSEnv
+from models import Action
+
+env = SaaSEnv()
+
 TASKS     = ["easy", "medium", "hard"]
 MAX_STEPS = 20
 
 ping_model(client)
 
-for task in TASKS:
-    obs = reset_env(task)
+try:
+    for task in TASKS:
+        obs = env.reset(task)
 
-    total_reward = 0.0
-    rewards = []
-    steps_taken = 0
+        total_reward = 0.0
 
-    print(f"[START] task={task} env={ENV_NAME} model={MODEL_NAME}")
+        print(f"[START] task={task} env={ENV_NAME} model={MODEL_NAME}")
 
-    for step_num in range(1, MAX_STEPS + 1):
-        action = select_action(obs)
-        result = step_env(action)
+        for step_num in range(1, MAX_STEPS + 1):
+            action_str = select_action(obs)
+            action = Action(action_str)
 
-        obs    = result["observation"]
-        reward = result["reward"]
-        done   = result["done"]
+            result = env.step(action)
 
-        total_reward += reward
-        rewards.append(reward)
-        steps_taken = step_num
+            obs = result.observation.model_dump()
+            reward = result.reward
+            done = result.done
+
+            total_reward += reward
+
+            print(
+                f"[STEP] step={step_num} "
+                f"action={action_str} "
+                f"reward={reward:.2f} "
+                f"done={str(done).lower()} "
+                f"error=null"
+            )
+
+            if done:
+                break
+
+        score = max(0.0, min(total_reward / 100.0, 1.0))
+        success = str(score > 0.1).lower()
 
         print(
-            f"[STEP] step={step_num} "
-            f"action={action} "
-            f"reward={reward:.2f} "
-            f"done={str(done).lower()} "
-            f"error=null"
+            f"[END] success={success} "
+            f"steps={step_num} "
+            f"score={score:.2f} "
+            f"rewards={total_reward:.2f}"
         )
 
-        if done:
-            break
-
-    score = max(0.0, min(total_reward / 100.0, 1.0))
-    success = str(score > 0.1).lower()
-
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-
-    print(
-        f"[END] success={success} "
-        f"steps={steps_taken} "
-        f"score={score:.2f} "
-        f"rewards={rewards_str}"
-    )
+except Exception as e:
+    print(f"[ERROR] {str(e)}")
