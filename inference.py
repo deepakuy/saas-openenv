@@ -1,5 +1,7 @@
 import os
 from openai import OpenAI
+from environment import SaaSEnv
+from models import Action
 
 # ---------------------------------------------------------------------------
 # Environment variables
@@ -49,9 +51,6 @@ def ping_model(client):
 # Main loop
 # ---------------------------------------------------------------------------
 
-from environment import SaaSEnv
-from models import Action
-
 env = SaaSEnv()
 
 TASKS     = ["easy", "medium", "hard"]
@@ -61,7 +60,7 @@ ping_model(client)
 
 try:
     for task in TASKS:
-        obs = env.reset(task)
+        obs = env.reset(task).model_dump()
 
         total_reward = 0.0
 

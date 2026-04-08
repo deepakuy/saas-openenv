@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from pydantic import BaseModel
 
 from environment import SaaSEnv
@@ -34,7 +34,7 @@ class StepRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @app.post("/reset")
-def reset(request: Optional[ResetRequest] = None):
+def reset(request: Optional[ResetRequest] = Body(default=None)):
     """Reset the environment for the given task and return the initial observation."""
     valid_tasks = {"easy", "medium", "hard"}
 
