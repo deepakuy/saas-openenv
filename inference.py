@@ -89,7 +89,8 @@ try:
             if done:
                 break
 
-        score = max(0.0, min(total_reward / 100.0, 1.0))
+        raw_score = total_reward / 100.0
+        score = max(0.01, min(raw_score, 0.99))
         success = str(score > 0.1).lower()
 
         print(
